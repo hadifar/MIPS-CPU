@@ -1,0 +1,524 @@
+-------------------------------- SIGN EXTEND ---------------------
+LIBRARY ieee;
+use ieee.std_logic_1164.all;
+ENTITY signExtend IS
+   generic (delay :time :=3 ns);
+  PORT( a : IN STD_LOGIC_VECTOR ( 15 downto 0);
+      output: OUT STD_LOGIC_VECTOR( 31 downto 0));
+END ENTITY;
+ARCHITECTURE signExtend OF signExtend IS
+  signal tmp : std_logic_vector(31 downto 0);
+  BEGIN
+     tmp(15 downto 0) <= a after delay;
+     tmp(31 downto 16) <= "0000000000000000" when ( a(15) = '0') ELSE 
+                           "1111111111111111" when ( a(15) = '1');
+     output <= tmp after delay;               
+END signExtend;
+------------------ and for jump ----------------
+library ieee;
+use ieee.std_logic_1164.all;
+
+ENTITY andJump is
+        generic(delay:time:=1 ns);
+        port(zero:in std_logic;
+             branch:in std_logic;
+            output:out std_logic);
+END ENTITY;
+Architecture andJump OF andJump IS
+    begin
+    output<=zero and branch after delay;            
+END Architecture;
+
+--************************** instruction memory **********************
+
+LIBRARY ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+ENTITY instructionMemory IS
+   generic (delay :time :=10 ns);
+  PORT( a : INOUT STD_LOGIC_VECTOR ( 31 downto 0);
+      output: OUT STD_LOGIC_VECTOR( 31 downto 0)
+      );
+END ENTITY;
+ARCHITECTURE instructionMemory OF instructionMemory IS
+  type MemMatrix is array ( 0 to 7 ) of std_logic_vector(31 downto 0); -- instruction from memory
+  signal Mem:MemMatrix := (x"00000000",x"00000001",x"00000000",x"00000001",x"00000001",x"00000001",x"00000001",x"00000001");
+  
+  BEGIN
+     output <= Mem(to_integer(unsigned(a(6 downto 2))));
+                  
+END instructionMemory;
+
+--**************************** Program Counter && Pipe ************************
+library ieee;
+use ieee.std_logic_1164.all;
+ENTITY programCounter is 
+       generic(delay:time:=10 ns; width:integer:=10);
+       port(input:in std_logic_vector(width-1 downto 0);
+             clock:in std_logic;
+             enable:in std_logic;
+             reset :in std_logic;
+             output:out std_logic_vector(width-1 downto 0)
+      );
+END programCounter;
+
+    Architecture programCounter of programCounter is
+     
+      BEGIN
+        PROCESS(clock,reset)
+          variable temp : STD_LOGIC_VECTOR(width-1 downto 0) := (others => '0');
+          Begin
+            IF reset = '0' THEN 
+              temp := (others => '0');
+            ELSIF RISING_EDGE(clock) THEN
+              IF enable = '1' THEN
+                temp := input;
+              END IF;
+            END IF;
+            output <= temp after delay;
+          END PROCESS;              
+    END programCounter;                
+
+--********************** multiplexer *************************
+library ieee;
+use ieee.std_logic_1164.all;
+ENTITY  mux IS
+    generic (delay :time :=1 ns; width:integer := 5);
+    port(a,b:in std_logic_vector(width-1 downto 0);
+        sel: in std_logic;
+        output:out std_logic_vector(width-1 downto 0));
+END mux;
+    
+Architecture mux of mux is
+    signal temp:std_logic_vector(width-1 downto 0);
+    begin
+        process(sel)
+         begin
+              CASE sel is
+              when '0' =>  
+                temp <= b;
+              when '1'=>   
+                temp <= a;
+              when others =>  NULL;   
+            end CASE;
+            output <= temp after delay;
+        end process;
+    END mux;
+--************************ shiftBy2 **************************************
+library ieee;
+use ieee.std_logic_1164.all;
+    
+ENTITY shiftBy2 is
+        generic(delay:time:=10 ns);
+        port(input:in std_logic_vector(31 downto 0);
+             output:out std_logic_vector(31 downto 0)
+             );
+END shiftBy2 ;
+Architecture shiftBy2 of shiftBy2 is  
+             begin
+                 output <= input(29 downto 0) & "00" after delay;   
+End Architecture;
+--************************** PC adder = pc + 4 ***************************
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.std_logic_arith.all;
+use ieee.std_logic_signed.all;
+    
+ENTITY pcAdder is
+        generic(delay:time:=10 ns);
+        port(input:in std_logic_vector(31 downto 0);
+             output:out std_logic_vector(31 downto 0)
+             );
+END pcAdder ;
+Architecture pcAdder of pcAdder is  
+             begin
+                 output <= (input + conv_std_logic_vector(4,32)) after delay;    
+End Architecture;
+                
+--********************** ALU ************************************
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+ENTITY ALU is 
+  GENERIC(delay : time := 10 ns);
+  PORT(a , b: IN STD_LOGIC_VECTOR(31 downto 0);
+      operation : IN STD_LOGIC_VECTOR(3 downto 0);
+      zeroBit   : OUT STD_LOGIC;
+      out1 : OUT STD_LOGIC_VECTOR(31 downto 0)
+    );
+END ENTITY;
+
+ARCHITECTURE ALU OF ALU IS 
+    signal output : std_logic_vector(31 downto 0);
+    Begin
+          WITH operation SELECT
+            output <= std_logic_vector(unsigned(a) + unsigned(b)) when "0000",
+                      std_logic_vector(unsigned(a) + not(unsigned(b)) + 1) when "0001" ,
+                      std_logic_vector(unsigned(a) + 1) when "0010", 
+                      std_logic_vector(unsigned(a) - 1) when "0011",
+                      std_logic_vector(unsigned(b) + 1) when "0100",
+                      std_logic_vector(unsigned(b) - 1) when "0101",
+                      a when "0110",
+                      b when "0111",
+                      not a when "1000",
+                      not b when "1001",
+                      a and b when "1010",
+                      a or b when "1011",
+                      a nand b when "1100",
+                      a nor b when "1101",
+                      a xor b when "1110",
+                      not(a xor b) when "1111",
+                     ( OTHERS => 'X') when others;
+                      zeroBit <= '1' when output = "00000000000000000000000000000000" else '0';
+        out1 <= output after delay;
+        
+    END ALU;
+    
+--********************* DATA MEMORY ****************************
+LIBRARY ieee;
+use ieee.std_logic_1164.all;
+use ieee.std_logic_arith.all;
+use ieee.numeric_std;
+ENTITY dataMemory is
+    GENERIC(delay : time := 10 ns);
+    port ( Add    : in  std_logic_vector (31 downto 0);
+     input  : in  std_logic_vector (31 downto 0);
+	   Clock  : in  std_logic;
+	   WE     : in  std_logic;
+	   output : out std_logic_vector (31 downto 0) );
+END ENTITY;
+
+Architecture dataMemory of dataMemory is
+    type MemVecArr is array (0 to 7) of std_logic_vector (31 downto 0);
+    -----------------------------
+    signal RAM  : MemVecArr  := 
+    (0 => conv_std_logic_vector ( 0, 32),  -- array(0)
+     1 => conv_std_logic_vector ( 1, 32),  -- array(1)
+     2 => conv_std_logic_vector ( 2, 32),  -- array(2)
+     3 => conv_std_logic_vector ( 3, 32),  -- array(3)
+     4 => conv_std_logic_vector ( 4, 32),  -- array(4)
+     5 => conv_std_logic_vector ( 5, 32),  -- array(5)
+     6 => conv_std_logic_vector ( 6, 32),  -- array(6)
+     7 => conv_std_logic_vector ( 7, 32));  -- array(7)
+     
+begin
+    READ_OP: 
+  
+	output <= RAM ( (conv_integer(unsigned(Add(6 downto 2)))) ) after delay;
+	
+    WRITE_OP: process (Clock)
+    begin
+        if (rising_edge(Clock)) then
+            if (WE = '1') then RAM ( (conv_integer(unsigned(Add(6 downto 2)))) ) <= input;
+	    end if;
+	end if;
+    end process WRITE_OP;
+
+end architecture dataMemory;
+
+--********************** REG BANK *******************************
+LIBRARY ieee;
+use ieee.std_logic_1164.all;
+use ieee.std_logic_arith.all;
+use ieee.std_logic_unsigned.all;
+
+ENTITY regBank is
+  
+    GENERIC(delay : time := 10 ns);
+    Port( adr1 , adr2 , adr3 : IN STD_LOGIC_VECTOR(4 DOWNTO 0);
+    Data3 : IN STD_LOGIC_VECTOR(31 DOWNTO 0);
+    clk , EW:IN STD_LOGIC;
+    Data1 ,Data2:OUT STD_LOGIC_VECTOR(31 DOWNTO 0)
+    );
+ END regBank;
+ 
+ Architecture regBank of regBank is
+  
+TYPE Matrix IS ARRAY (0 TO 31) OF STD_LOGIC_VECTOR(31 DOWNTO 0);
+SIGNAL Mem : Matrix;
+       begin
+       process (clk)
+               variable index1 : integer;
+               variable index2 : integer;
+               variable index3 : integer;
+           begin
+            index1 := conv_integer(Adr1);
+            index2 := conv_integer(Adr2);
+            index3 := conv_integer(Adr3);
+            if (clk'event and clk='1') then
+                if(ew ='0') then
+                   if(index1=index3) then
+                       data1 <= data3;
+                       else
+                       data1 <= mem(index1) after delay;
+                   end if;
+                   if(index2=index3) then
+                       data2 <= data3;
+                       else
+                       data2 <= mem(index2) after delay;
+                   end if;
+                   
+                end if;  
+                
+                if(ew ='0') then
+                mem(index3) <= data3;
+            end if;
+        end if;
+      
+  end process;
+        
+  end regBank;
+-------------------------ALU CONTROL--------------------
+library IEEE;
+use IEEE.std_logic_1164.all;
+-------------------------
+ENTITY ALUControl IS
+  GENERIC(delay : time := 10 ns);
+    port( inputs : in std_logic_vector(7 downto 0);
+          outputs : out std_logic_vector(3 downto 0));
+END ENTITY;
+-------------------------
+Architecture ALUControl of ALUControl is
+    begin
+            outputs <=  "0010" when( inputs (7 downto 6) = "00") else 
+                        "0110" when( inputs (7 downto 6) = "01") else 
+                        "0010" when( inputs (7 downto 6) = "10" AND inputs (3 downto 0)= "0000" ) else 
+                        "0110" when( inputs (7) = '1' AND inputs (3 downto 0)= "0010" ) else 
+                        "0000" when( inputs (7 downto 6) = "10" AND inputs (3 downto 0)= "0100" ) else 
+                        "0001" when( inputs (7 downto 6) = "10" AND inputs (3 downto 0)= "0101" ) else 
+                        "0111" when( inputs (7) = '1' AND inputs (3 downto 0)= "1010" ) ;
+
+END ALUControl;
+------------------------------control unit--------------------------
+library IEEE;
+use IEEE.std_logic_1164.all;
+ENTITY controlUnit is
+    GENERIC(delay : time := 10 ns);
+    port( inputs : in std_logic_vector(5 downto 0);
+           outputs : out std_logic_vector(8 downto 0));
+END ENTITY;
+-------------------------
+Architecture controlUnit of controlUnit is
+    begin
+        with inputs select
+        outputs <= "100100010" when "000000", --R-type
+                   "011110000" when "100011", -- LW 
+                   "X1X001000" when "101011", -- SW
+                   "X0X000101" when "000100", -- Beq
+                   (others => 'Z') when others;
+end controlUnit;
+--******************* MIPS CPU ****************************
+
+LIBRARY ieee;
+use ieee.std_logic_1164.all;
+use ieee.std_logic_arith.all;
+use ieee.std_logic_unsigned.all;
+
+ENTITY CPU IS 
+  generic (delay :time := 10 ns);
+  PORT(clk,reset : inout STD_LOGIC);
+END CPU;
+ARCHITECTURE CPU OF CPU IS 
+------------ component declaration --------------------
+
+COMPONENT signExtend IS 
+  generic (delay :time :=10 ns);
+  PORT( a : in STD_LOGIC_VECTOR(15 downto 0);
+   output : out STD_LOGIC_VECTOR(31 downto 0));
+END COMPONENT;
+---------------------------------------------------------
+COMPONENT andJump is
+        generic(delay:time:=1 ns);
+        port(zero:in std_logic;
+             branch:in std_logic;
+            output:out std_logic);
+END COMPONENT;
+----------------------------------------------------------
+
+COMPONENT regBank IS
+  GENERIC(delay : time := 10 ns); ---baraye delay
+    Port(adr1,adr2,adr3:IN STD_LOGIC_VECTOR(4 DOWNTO 0);
+    Data3:IN STD_LOGIC_VECTOR(31 DOWNTO 0);
+    clk,EW:IN STD_LOGIC;
+    Data1,Data2:OUT STD_LOGIC_VECTOR(31 DOWNTO 0)
+    );
+END COMPONENT;
+
+----------------------------------------------------
+COMPONENT controlUnit is
+  GENERIC(delay : time := 10 ns);
+    port( inputs : in std_logic_vector(5 downto 0);
+          outputs : out std_logic_vector(8 downto 0));
+END COMPONENT;
+-----------------------------------------------
+COMPONENT ALU IS
+GENERIC(delay : time := 10 ns);
+  PORT(a,b: IN STD_LOGIC_VECTOR(31 downto 0);
+       operation : IN STD_LOGIC_VECTOR(3 downto 0);
+       zeroBit : OUT STD_LOGIC;
+       out1: OUT STD_LOGIC_VECTOR(31 downto 0)
+      );
+END COMPONENT;
+
+------------------------------------------
+COMPONENT instructionMemory IS
+   generic (delay :time :=10 ns);
+  PORT( a : INOUT STD_LOGIC_VECTOR ( 31 downto 0);
+      output: OUT STD_LOGIC_VECTOR( 31 downto 0)
+      );
+END COMPONENT;
+------------------------------------------
+------------------------------------------
+COMPONENT programCounter is 
+       generic(delay:time:=10 ns; width:integer:=10);
+       port(input:in std_logic_vector(width-1 downto 0);
+             clock:in std_logic;
+             enable:in std_logic;
+             reset :in std_logic;
+             output:out std_logic_vector(width-1 downto 0)
+      );
+END COMPONENT;
+
+------------------------------------------
+COMPONENT  mux IS
+    generic (delay :time :=1 ns; width: integer :=5);
+    port(a,b:in std_logic_vector(width downto 0);
+        sel: in std_logic;
+        output:out std_logic_vector(width downto 0));
+END COMPONENT;
+-----------------------------------------------
+COMPONENT shiftBy2 is
+        generic(delay:time:=10 ns);
+        port(input:in std_logic_vector(31 downto 0);
+             output:out std_logic_vector(31 downto 0));
+END COMPONENT;
+-----------------------------------------------
+COMPONENT pcAdder is
+        generic(delay:time:=10 ns);
+        port(input:in std_logic_vector(31 downto 0);
+             output:out std_logic_vector(31 downto 0)
+             );
+END COMPONENT;
+----------------------------------------------
+COMPONENT dataMemory is
+    GENERIC(delay : time := 10 ns);
+    port ( Add    : in  std_logic_vector (31 downto 0);
+     input  : in  std_logic_vector (31 downto 0);
+	   Clock  : in  std_logic;
+	   WE     : in  std_logic;
+	   output : out std_logic_vector (31 downto 0) );
+END COMPONENT;
+-------------------------------------------------
+COMPONENT ALUControl IS
+  GENERIC(delay : time := 10 ns);
+    port( inputs : in std_logic_vector(7 downto 0);
+          outputs : out std_logic_vector(3 downto 0));
+END COMPONENT;
+--------------------------------------------
+-------------------------------------------------
+
+signal PC : STD_LOGIC_VECTOR(31 downto 0) := (others => '0');
+signal PC_out : STD_LOGIC_VECTOR(31 downto 0);
+signal enable  : std_logic := '1';    -- enable
+signal inst    : std_logic_vector(31 downto 0); -- instruction
+
+signal IF_ID_REG_in , IF_ID_REG_out : std_logic_vector(63 downto 0);
+signal EW : std_logic := '1'; -- enable write
+signal IF_ID_WriteData : STD_LOGIC_VECTOR(31 downto 0) := (others => '0');
+signal RegBankOut1,RegBankOut2 : STD_LOGIC_VECTOR(31 downto 0) := (others => '0');
+signal ctrl_unit_out : std_logic_vector(8 downto 0); -- output of control unit 
+signal signEx_out : std_logic_vector ( 31 downto 0); -- output of sign extend
+
+signal ID_EX_REG_in , ID_EX_REG_out : std_logic_vector(146 downto 0);
+signal shifted : std_logic_vector(31 downto 0);
+signal alu_ctrl_out : std_logic_vector( 3 downto 0);
+signal alu_ctrl_in  : std_logic_vector( 7 downto 0);
+signal MUX_1_out  : std_logic_vector( 31 downto 0);
+signal MUX_2_out  : std_logic_vector( 4 downto 0);
+signal zeroBit : std_logic := '0';
+
+signal EX_MEM_REG_in,EX_MEM_REG_out :std_logic_vector(106 downto 0);
+signal MEM_WB_REG_in,MEM_WB_REG_out :std_logic_vector(70 downto 0);
+
+signal jumpRes : std_logic := '0'; -- result of and jump 
+
+
+
+  ------------------------------Porting Here --------------------------------
+  
+Begin
+    clock_gen: process(clk, reset)  -- clock generator and one shot clear signal
+             begin
+               if reset='1' then -- happens only once
+                 reset <= '0' after 200 ps;
+               elsif reset='0' then     
+                 clk <= not clk after 5 ps;  
+               end if;
+             end process clock_gen;
+
+                        
+
+  --IF/ID stage       
+  pc_counter : programCounter generic map(delay,32) port map(PC,clk,enable,reset,PC_out);
+  pc_adder   : PCAdder generic map(delay) port map(PC,PC_out);
+  IF_ID_Reg_in(63 downto 32) <= PC_out;
+  ins_memory : instructionMemory generic map(delay) port map(PC_out,inst);
+  IF_ID_REG_in(31 downto 0) <= inst;
+  Pipe1  : programCounter generic map(delay,64) port map(IF_ID_REG_in,clk,enable,reset,IF_ID_REG_out);
+  MUX_4 : MUX generic map(delay,32) port map(PC_out,EX_MEM_REG_out(101 downto 70),jumpRes,PC);
+  and_jump : andJump generic map(delay) port map(zeroBit,EX_MEM_REG_out(104),jumpRes); 
+  
+    --(zeroBit and EX_MEM_REG_out(104))
+  --Mux_1 : MUX generic map(delay,32) port map(ID_EX_REG_out(105 downto 74),ID_EX_REG_out(41 downto 10),ID_EX_REG_out(9),MUX_1_out);
+  --ID/EX  
+  register_bank : regBank generic map(delay) port map(IF_ID_REG_out(25 downto 21),
+                                                      IF_ID_REG_out(20 downto 16),
+                                                      IF_ID_REG_out(15 downto 11),
+                                                      IF_ID_WriteData,
+                                                      clk,EW,
+                                                      RegBankOut1,regBankOut2);
+  
+  sign_extend : signExtend generic map(delay) port map(IF_ID_REG_out(15 downto 0),signEx_out);
+  ctrl_unit : controlUnit generic map(delay) port map(IF_ID_REG_out(31 downto 26),ctrl_unit_out);
+  
+  ID_EX_REG_in(146 downto 138) <= ctrl_unit_out;
+  ID_EX_REG_in(137 downto 106) <= IF_ID_REG_out(63 downto 32);
+  ID_EX_REG_in(105 downto 74) <= RegBankOut1;
+  ID_EX_REG_in(73 downto 42) <= RegBankOut2;
+  ID_EX_REG_in(41 downto 10) <= signEx_out;
+ 	ID_EX_REG_in(9 downto 5 ) <= IF_ID_REG_out(20 downto 16);
+ 	ID_EX_REG_in(4 downto 0) <= IF_ID_REG_out(15 downto 11);
+ 	
+
+  Pipe2 : programCounter generic map(delay,147) port map(ID_EX_REG_in,clk,enable,reset,ID_EX_REG_out);
+  shift_by_2 : shiftBy2 generic map(delay) port map(ID_EX_REG_out(41 downto 10),shifted);
+  Mux_1 : MUX generic map(delay,32) port map(ID_EX_REG_out(105 downto 74),ID_EX_REG_out(41 downto 10),ID_EX_REG_out(9),MUX_1_out);
+  alu_ctrl_in <= ctrl_unit_out(8 downto 7) & ID_EX_REG_in(41 downto 36); -- meqdare aval ALUOp va meqdare dovom vorodi ctrl alu 
+  ALU_Control : ALUControl generic map(delay) port map(alu_ctrl_in,alu_ctrl_out);
+  ALU_main    : ALU generic map(delay) port map(ID_EX_REG_in(105 downto 74),MUX_1_out,alu_ctrl_out,zeroBit,EX_MEM_REG_in(68 downto 37));
+  EX_MEM_REG_in(69) <= zeroBit;
+  ALU_adder   : ALU generic map(delay) port map(ID_EX_Reg_out(137 downto 106),shifted ,"0000",zeroBit,EX_MEM_REG_in(101 downto 70));
+  MUX_2 : MUX generic map(delay,5) port map(ID_EX_REG_in(9 downto 5 ),ID_EX_REG_in(4 downto 0),ID_EX_REG_out(6),MUX_2_out);
+  
+  EX_MEM_REG_in(106 downto 102) <= ID_EX_REG_OUT( 146 downto 142); 
+  EX_MEM_REG_in(36 downto 5) <= ID_EX_REG_out(73 downto 42);
+  EX_MEM_REG_in(4 downto 0) <= Mux_2_out; 
+  
+  Pipe3 : programCounter generic map(delay , 107) port map(EX_MEM_REG_in,clk,enable,reset,EX_MEM_REG_out);
+  
+  Data_memory : dataMemory generic map(delay) port map(EX_MEM_REG_out(68 downto 37),EX_MEM_REG_out(36 downto 5),clk,EX_MEM_REG_out(4), MEM_WB_REG_in(68 downto 37));
+  MEM_WB_REG_in(4 downto 0) <= EX_MEM_REG_out(4 downto 0);
+  MEM_WB_REG_in(36 downto 5) <= EX_MEM_REG_out(68 downto 37);
+  MEM_WB_REG_in(70 downto 69)<= EX_MEM_REG_out(106 downto 105);
+  
+  Pipe4 : programCounter generic map(delay , 71) port map(MEM_WB_REG_in,clk,enable,reset,MEM_WB_REG_out);
+  
+  IF_ID_REG_out(15 downto 11) <= MEM_WB_REG_out(4 downto 0);
+  MUX_3 : MUX generic map(delay,32) port map(MEM_WB_REG_in(36 downto 5),MEM_WB_REG_out(68 downto 37),MEM_WB_REG_out(69),IF_ID_WriteData);
+  
+END CPU;
+
+    
+  
